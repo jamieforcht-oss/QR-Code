@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>出入庫系統 - 專業掃描整合版 v6.2</title>
+  <!-- 引入 HTML5-QRCode 掃描庫 -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 15px; }
+    .container { background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); padding: 30px; max-width: 500px; width: 100%; position: relative; }
+    .header { text-align: center; margin-bottom: 20px; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; color: #555; font-weight: 600; margin-bottom: 8px; }
+    select, input, textarea { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 16px; transition: border-color 0.3s; }
+
+    /* 庫存顯示區域 */
+    .stock-display { background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 12px 15px; border-radius: 10px; margin-top: 8px; border: 2px solid #2196F3; display: none; }
+    .stock-display.show { display: block; }
+    .stock-label { font-size: 13px; color: #1565C0; font-weight: 600; margin-bottom: 5px; }
+    .stock-value { font-size: 24px; font-weight: bold; color: #0d47a1; display: flex; align-items: center; gap: 8px; }
+    .stock-icon { font-size: 28px; }
+
+    .action-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+    .action-btn { padding: 12px; border: 2px solid #e0e0e0; border-radius: 10px; background: white; cursor: pointer; font-weight: bold; transition: all 0.3s; }
+    .action-btn.active.in { border-color: #4caf50; background: #4caf50; color: white; }
+    .action-btn.active.out { border-color: #f44336; background: #f44336; color: white; }
+
+    .sn-btn { padding: 12px; border: 2px solid #667eea; border-radius: 10px; background: #f0f4ff; color: #667eea; cursor: pointer; width: 100%; margin-top: 5px; font-weight: bold; transition: all 0.3s; }
+    .sn-btn:hover { background: #667eea; color: white; }
+    .sn-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* QR Code 專用樣式 */
+    .qr-code-field { background: #fff8e1; border: 2px dashed #ffa726; }
+    .sn-btn.qr-type { background: #fff3e0; color: #f57c00; border-color: #ffa726; }
+    .sn-btn.qr-type:hover { background: #ffa726; color: white; }
+
+    /* 序號顯示區 */
+    .sn-display { background: #f5f5f5; padding: 12px; border-radius: 8px; margin-top: 8px; min-height: 40px; font-family: 'Courier New', monospace; color: #333; font-size: 14px; word-break: break-all; }
+    .sn-display.empty { color: #999; font-style: italic; }
+
+    /* 新增/清除序號按鈕 */
+    .add-sn-btn { padding: 8px 12px; border: 1px solid #2196F3; border-radius: 6px; background: #E3F2FD; color: #1976D2; cursor: pointer; font-size: 13px; font-weight: bold; margin-top: 8px; display: inline-block; transition: all 0.2s; margin-right: 8px; }
+    .add-sn-btn:hover { background: #2196F3; color: white; }
+    .clear-sn-btn { padding: 8px 12px; border: 1px solid #f44336; border-radius: 6px; background: #ffebee; color: #c62828; cursor: pointer; font-size: 13px; font-weight: bold; margin-top: 8px; display: inline-block; transition: all 0.2s; }
+    .clear-sn-btn:hover { background: #f44336; color: white; }
+
+    /* 掃描控制介面 */
+    .camera-container { display: none; margin-top: 15px; border-radius: 15px; overflow: hidden; border: 4px solid #667eea; position: relative; background: #000; }
+    .camera-container.show { display: block; }
+    .camera-container.qr-mode { border-color: #ffa726; }
+    #reader { width: 100%; min-height: 300px; position: relative; }
+
+    .scan-hint { position: absolute; top: 10px; left: 0; width: 100%; text-align: center; color: #00ff00; font-size: 14px; z-index: 10; font-weight: bold; text-shadow: 1px 1px 3px #000; pointer-events: none; padding: 0 10px; }
+
+    .cam-ctrl-panel { background: #222; padding: 15px; color: white; }
+    .ctrl-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .zoom-slider { flex: 1; accent-color: #667eea; }
+    .zoom-label { font-size: 14px; min-width: 45px; }
+    .btn-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .ctrl-btn { padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; color: white; font-size: 14px; transition: all 0.2s; }
+    .close-btn { background: #e74c3c; }
+
+    .submit-btn { width: 100%; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 10px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 10px; box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
+    .submit-btn:disabled { background: #ccc; box-shadow: none; }
+
+    /* 確認視窗 */
+    .confirm-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
+    .confirm-overlay.show { display: flex; }
+    .confirm-modal { background: white; border-radius: 15px; padding: 25px; width: 100%; max-width: 400px; max-height: 80vh; overflow-y: auto; }
+    .confirm-title { font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+    .confirm-item { margin-bottom: 10px; display: flex; justify-content: space-between; gap: 10px; }
+    .confirm-label { color: #666; flex-shrink: 0; }
+    .confirm-value { font-weight: bold; color: #111; text-align: right; word-break: break-word; }
+
+    /* 庫存變化顯示 */
+    .stock-change-box { background: #f0f7ff; border: 2px solid #2196F3; border-radius: 10px; padding: 15px; margin: 15px 0; }
+    .stock-change-title { font-size: 14px; color: #1565C0; font-weight: 600; margin-bottom: 10px; text-align: center; }
+    .stock-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+    .stock-row-label { font-size: 14px; color: #666; }
+    .stock-row-value { font-size: 18px; font-weight: bold; }
+    .stock-before { color: #666; }
+    .stock-after.increase { color: #4caf50; }
+    .stock-after.decrease { color: #f44336; }
+    .stock-arrow { font-size: 24px; text-align: center; margin: 5px 0; }
+    .stock-arrow.increase { color: #4caf50; }
+    .stock-arrow.decrease { color: #f44336; }
+
+    .confirm-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+    .confirm-btn { padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    .btn-cancel { background: #eee; color: #333; }
+    .btn-ok { background: #4caf50; color: white; }
+
+    .loading { display: none; text-align: center; margin-top: 15px; font-weight: bold; color: #667eea; }
+    .message { display: none; padding: 15px; border-radius: 10px; margin-top: 15px; text-align: center; font-weight: bold; }
+    .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 style="display: flex; justify-content: center; align-items: center; gap: 10px;">
+        📦 出入庫系統
+      </h1>
+      <div style="background: #eee; padding: 4px 12px; border-radius: 12px; font-size: 14px; display: inline-block; margin-top: 5px; font-weight: bold; color: #555;">
+        當前類別: <span id="categoryLabel">載入中...</span>
+      </div>
+    </div>
+
+    <form id="inventoryForm">
+      <div class="form-group">
+        <label>🏷️ 物品名稱</label>
+        <select id="itemName" name="itemName" required>
+          <option value="">-- 正在載入物品... --</option>
+        </select>
+        <!-- 庫存顯示區 -->
+        <div id="stockDisplay" class="stock-display">
+          <div class="stock-label">📊 當前庫存</div>
+          <div class="stock-value">
+            <span class="stock-icon">📦</span>
+            <span id="stockNumber">0</span>
+            <span style="font-size: 16px; color: #1976D2;">件</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>📋 操作動作</label>
+        <div class="action-buttons">
+          <button type="button" class="action-btn in" onclick="setAction('入庫', this)">⬆️ 入庫</button>
+          <button type="button" class="action-btn out" onclick="setAction('出庫', this)">⬇️ 出庫</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>🔢 數量</label>
+        <input type="number" id="quantity" name="quantity" min="1" value="1" required>
+      </div>
+
+      <div class="form-group">
+        <label>👤 操作人員</label>
+        <input type="text" id="operator" name="operator" required placeholder="您的姓名">
+      </div>
+
+      <!-- QR Code 掃描欄位 (NOKIA 專用) -->
+      <div class="form-group">
+        <label>📱 設備 QR Code (NOKIA)</label>
+        <input type="text" id="qrCode" name="qrCode" class="qr-code-field" placeholder="掃描 NOKIA QR Code" readonly>
+        <button type="button" class="sn-btn qr-type" id="scanQrBtn">📷 掃描 QR Code</button>
+        <div id="qrDisplay" class="sn-display empty">尚未掃描</div>
+      </div>
+
+      <div class="camera-container" id="cameraContainer">
+        <div class="scan-hint">💡 點擊掃描框可對焦 | 雙指縮放可調整大小</div>
+        <div id="reader"></div>
+        <div class="cam-ctrl-panel">
+          <div class="ctrl-row" id="zoomContainer" style="display:none;">
+            <span class="zoom-label">🔍 放大</span>
+            <input type="range" class="zoom-slider" id="zoomRange" min="1" max="5" step="0.1" value="1">
+            <span class="zoom-label" id="zoomValue">1.0x</span>
+          </div>
+          <div class="btn-grid">
+            <button type="button" class="ctrl-btn close-btn" onclick="closeCamera()">❌ 關閉相機</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 一般序號欄位 (支援多次掃描) -->
+      <div class="form-group">
+        <label>🔖 其他序號 / 料號</label>
+        <input type="text" id="sn" name="sn" placeholder="掃描或手輸其他序號">
+        <button type="button" class="sn-btn" id="scanSnBtn">📷 掃描序號</button>
+        <div style="margin-top: 5px;">
+          <button type="button" class="add-sn-btn" id="addSnBtn">➕ 新增更多序號</button>
+          <button type="button" class="clear-sn-btn" id="clearSnBtn">🗑️ 清除所有序號</button>
+        </div>
+        <div id="snDisplay" class="sn-display empty">無其他序號</div>
+      </div>
+
+      <div class="form-group">
+        <label>📝 備註 (選填)</label>
+        <textarea id="remarks" name="remarks" rows="3" placeholder="輸入備註資訊..."></textarea>
+      </div>
+
+      <button type="submit" class="submit-btn" id="submitBtn">✅ 確認送出</button>
+    </form>
+
+    <div id="loading" class="loading">⏳ 處理中...</div>
+    <div id="message" class="message"></div>
+  </div>
+
+  <!-- 確認視窗 -->
+  <div id="confirmOverlay" class="confirm-overlay">
+    <div class="confirm-modal">
+      <div class="confirm-title">🔍 請確認操作資訊</div>
+      <div id="confirmList"></div>
+      <div class="confirm-btns">
+        <button class="confirm-btn btn-cancel" onclick="hideConfirm()">❌ 取消</button>
+        <button class="confirm-btn btn-ok" id="finalSubmitBtn">✅ 確定送出</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+    // ==========================================
+    // 🚨 在此處貼上您的 Google Apps Script 網頁應用程式網址 (結尾是 /exec)
+    // ==========================================
+    const API_URL = "https://script.google.com/macros/s/AKfycbwmSzvzYHHwG2vbbFSzMYgAS74VdWSA4sk-hoRuTpHI0n3fpFioRkAAsjhcuFmtLEI/exec"; 
+    
+    let currentCategory = "";
+    let html5QrCode = null;
+    let isScanning = false;
+    let selectedAction = '';
+    let snList = [];
+    let currentFormData = null;
+    let currentScanMode = '';
+    let currentStock = 0;
+
+    // ==================== 頁面載入：抓取參數與資料 ====================
+    window.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      currentCategory = urlParams.get('category');
+      
+      if (!currentCategory) {
+        document.getElementById('categoryLabel').textContent = "⚠️ 錯誤：未指定類別";
+        alert("網址缺少 category 參數，請透過正確的 QR Code 或連結進入。");
+        return;
+      }
+
+      if (!API_URL || API_URL === "在此輸入您的_GAS_Web_App_URL") {
+        alert("⚠️ 系統尚未設定 API_URL，請先在程式碼中填寫 GAS 部署網址！");
+        return;
+      }
+      
+      document.getElementById('categoryLabel').textContent = currentCategory;
+      fetchItemsFromAPI(currentCategory);
+    });
+
+    // ==================== 從後端 API 取得物品清單 ====================
+    function fetchItemsFromAPI(category) {
+      document.getElementById('itemName').innerHTML = '<option value="">-- 正在從系統載入... --</option>';
+      
+      fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ actionType: 'getItems', category: category })
+      })
+      .then(res => res.json())
+      .then(data => {
+        const select = document.getElementById('itemName');
+        if (data.success && data.items.length > 0) {
+          select.innerHTML = '<option value="">-- 請選擇物品 --</option>';
+          data.items.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = item.name;
+            opt.dataset.stock = item.currentStock;
+            opt.textContent = item.name;
+            select.appendChild(opt);
+          });
+        } else {
+          select.innerHTML = '<option value="">(此分類目前沒有物品)</option>';
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById('itemName').innerHTML = '<option value="">❌ 載入失敗，請檢查網路</option>';
+      });
+    }
+
+    // ==================== 物品選擇監聽 - 顯示庫存 ====================
+    document.getElementById('itemName').addEventListener('change', function() {
+      const selectedOption = this.options[this.selectedIndex];
+      const stockDisplay = document.getElementById('stockDisplay');
+      const stockNumber = document.getElementById('stockNumber');
+
+      if (selectedOption.value) {
+        currentStock = parseInt(selectedOption.dataset.stock) || 0;
+        stockNumber.textContent = currentStock;
+        stockDisplay.classList.add('show');
+      } else {
+        stockDisplay.classList.remove('show');
+        currentStock = 0;
+      }
+    });
+
+    // ==================== 設定操作動作 ====================
+    function setAction(action, btn) {
+      selectedAction = action;
+      document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    // ==================== 新增序號功能 ====================
+    document.getElementById('addSnBtn').addEventListener('click', function() {
+      const snInput = document.getElementById('sn');
+      const value = snInput.value.trim();
+      if (value) {
+        snList.push(value);
+        updateSnDisplay();
+        snInput.value = '';
+        snInput.focus();
+      } else {
+        alert('請先輸入序號！');
+      }
+    });
+
+    document.getElementById('clearSnBtn').addEventListener('click', function() {
+      if (snList.length === 0) return alert('沒有序號需要清除');
+      if (confirm('確定要清除所有序號嗎？(共 ' + snList.length + ' 筆)')) {
+        snList = [];
+        updateSnDisplay();
+      }
+    });
+
+    function updateSnDisplay() {
+      const display = document.getElementById('snDisplay');
+      if (snList.length === 0) {
+        display.className = 'sn-display empty';
+        display.textContent = '無其他序號';
+      } else {
+        display.className = 'sn-display';
+        display.innerHTML = snList.map((sn, i) => `<div style="margin: 3px 0;"><strong>${i + 1}.</strong> ${sn}</div>`).join('');
+      }
+    }
+
+    // ==================== Nokia QR Code 解析邏輯 ====================
+    function parseNokiaQRCode(text) {
+      let p1 = "", sVal = "";
+      
+      // 判斷是否包含 Nokia 常用的分隔符號 (\x1d 或 ASCII 29 Group Separator)
+      if (text.includes('\x1d') || text.includes('')) {
+        const parts = text.split(/[\x1d]/);
+        for (let part of parts) {
+          // 抓取 1P (料號)
+          if (part.startsWith('1P')) {
+            p1 = part.substring(2);
+          }
+          // 抓取 S (序號)，需排除例外
+          else if (part.charAt(0) === 'S' && part.charAt(1) !== ' ') {
+            sVal = part.substring(1);
+          }
+        }
+      } else {
+        // 如果不可見字元被掃描器過濾掉，則啟用備用正則匹配法
+        const match1P = text.match(/1P([A-Z0-9.-]+)/);
+        const matchS = text.match(/S([A-Z0-9]+)/);
+        if (match1P) p1 = match1P[1];
+        if (matchS) sVal = matchS[1];
+      }
+
+      // 根據提取結果組合輸出格式
+      if (p1 && sVal) {
+        return `(1P)"${p1}"+(S)"${sVal}"`;
+      } else if (p1) {
+        return `(1P)"${p1}"`;
+      } else if (sVal) {
+        return `(S)"${sVal}"`;
+      }
+      
+      // 如果都不是，則原封不動輸出原本掃到的內容
+      return text;
+    }
+
+    // ==================== 掃描相關 ====================
+    document.getElementById('scanQrBtn').addEventListener('click', () => { currentScanMode = 'qrCode'; startScanner(); });
+    document.getElementById('scanSnBtn').addEventListener('click', () => { currentScanMode = 'sn'; startScanner(); });
+
+    async function startScanner() {
+      if (isScanning) return;
+      const container = document.getElementById('cameraContainer');
+      const scanQrBtn = document.getElementById('scanQrBtn');
+      const scanSnBtn = document.getElementById('scanSnBtn');
+
+      isScanning = true;
+      scanQrBtn.disabled = true;
+      scanSnBtn.disabled = true;
+      container.classList.add('show');
+
+      if (currentScanMode === 'qrCode') container.classList.add('qr-mode');
+      else container.classList.remove('qr-mode');
+
+      if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+          let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear') || d.label.toLowerCase().includes('後'));
+          if (!backCamera) backCamera = devices[devices.length - 1];
+
+          await html5QrCode.start(
+            backCamera.id,
+            { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
+            onScanSuccess,
+            (errorMessage) => { /* 忽略正常的找尋條碼錯誤 */ }
+          );
+          initializeZoom();
+        } else {
+          alert('❌ 找不到任何相機裝置');
+          await closeCamera();
+        }
+      } catch (err) {
+        console.error("啟動掃描失敗:", err);
+        alert("相機權限遭拒或啟動失敗：" + err);
+        await closeCamera();
+      }
+    }
+
+    function onScanSuccess(decodedText) {
+      // 呼叫 Nokia 條碼解析器 (如果是普通條碼會自動回傳原始字串)
+      const parsedText = parseNokiaQRCode(decodedText);
+
+      if (currentScanMode === 'qrCode') {
+        document.getElementById('qrCode').value = parsedText;
+        document.getElementById('qrDisplay').className = 'sn-display';
+        document.getElementById('qrDisplay').textContent = '✅ ' + parsedText;
+      } else {
+        snList.push(parsedText);
+        updateSnDisplay();
+      }
+      closeCamera();
+    }
+
+    async function stopScanner() {
+      if (html5QrCode && html5QrCode.isScanning) {
+        try { await html5QrCode.stop(); } catch (err) { console.error("停止掃描錯誤:", err); }
+      }
+    }
+
+    function initializeZoom() {
+      try {
+        const track = (html5QrCode && typeof html5QrCode.getRunningTrack === 'function') ? html5QrCode.getRunningTrack() : null;
+        if (!track) return;
+
+        const capabilities = track.getCapabilities();
+        const settings = track.getSettings();
+        const zoomContainer = document.getElementById('zoomContainer');
+        const zoomRange = document.getElementById('zoomRange');
+        const zoomValue = document.getElementById('zoomValue');
+
+        if (capabilities.zoom) {
+          zoomContainer.style.display = 'flex';
+          zoomRange.min = capabilities.zoom.min || 1;
+          zoomRange.max = Math.min(capabilities.zoom.max, 5);
+          zoomRange.step = capabilities.zoom.step || 0.1;
+          zoomRange.value = settings.zoom || 1;
+          zoomValue.textContent = (settings.zoom || 1).toFixed(1) + 'x';
+
+          zoomRange.oninput = () => {
+            const zoomVal = parseFloat(zoomRange.value);
+            zoomValue.textContent = zoomVal.toFixed(1) + 'x';
+            track.applyConstraints({ advanced: [{ zoom: zoomVal }] }).catch(e => console.log('變焦調整:', e));
+          };
+        } else {
+          zoomContainer.style.display = 'none';
+        }
+      } catch (err) { console.error('初始化變焦功能:', err); }
+    }
+
+    async function closeCamera() {
+      const container = document.getElementById('cameraContainer');
+      await stopScanner();
+      container.classList.remove('show');
+      container.classList.remove('qr-mode');
+      document.getElementById('zoomContainer').style.display = 'none';
+      document.getElementById('scanQrBtn').disabled = false;
+      document.getElementById('scanSnBtn').disabled = false;
+      isScanning = false;
+    }
+
+    // ==================== 表單提交 ====================
+    document.getElementById('inventoryForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      if (!selectedAction) return alert('請選擇「入庫」或「出庫」！');
+      const itemName = document.getElementById('itemName').value;
+      if (!itemName) return alert('請選擇物品名稱！');
+
+      const qrCode = document.getElementById('qrCode').value.trim();
+      let finalSnList = [];
+      if (qrCode) finalSnList.push(qrCode);
+      if (snList.length > 0) finalSnList.push(...snList);
+      const finalSn = finalSnList.length > 0 ? finalSnList.join(' / ') : '無';
+
+      const quantity = parseInt(document.getElementById('quantity').value);
+
+      let newStock = selectedAction === '入庫' ? currentStock + quantity : currentStock - quantity;
+      if (newStock < 0) return alert('❌ 庫存不足！\n當前庫存：' + currentStock + ' 件\n需要出庫：' + quantity + ' 件');
+
+      currentFormData = {
+        category: currentCategory,
+        itemName: itemName,
+        action: selectedAction,
+        quantity: quantity,
+        operator: document.getElementById('operator').value,
+        sn: finalSn,
+        remarks: document.getElementById('remarks').value || '無',
+        stockBefore: currentStock,
+        stockAfter: newStock
+      };
+
+      // 確認視窗
+      const stockChangeClass = selectedAction === '入庫' ? 'increase' : 'decrease';
+      const arrowIcon = selectedAction === '入庫' ? '⬆️' : '⬇️';
+      const actionColor = currentFormData.action === '入庫' ? '#4caf50' : '#f44336';
+
+      const listHtml = `
+        <div class="confirm-item"><span class="confirm-label">📦 類別：</span><span class="confirm-value">${currentFormData.category}</span></div>
+        <div class="confirm-item"><span class="confirm-label">🏷️ 物品：</span><span class="confirm-value">${currentFormData.itemName}</span></div>
+        <div class="confirm-item"><span class="confirm-label">📋 動作：</span><span class="confirm-value" style="color:${actionColor}">${currentFormData.action}</span></div>
+        <div class="confirm-item"><span class="confirm-label">🔢 數量：</span><span class="confirm-value">${currentFormData.quantity}</span></div>
+        <div class="stock-change-box">
+          <div class="stock-change-title">📊 庫存變化</div>
+          <div class="stock-row"><span class="stock-row-label">操作前：</span><span class="stock-row-value stock-before">${currentFormData.stockBefore} 件</span></div>
+          <div class="stock-arrow ${stockChangeClass}">${arrowIcon}</div>
+          <div class="stock-row"><span class="stock-row-label">操作後：</span><span class="stock-row-value stock-after ${stockChangeClass}">${currentFormData.stockAfter} 件</span></div>
+        </div>
+        <div class="confirm-item"><span class="confirm-label">👤 人員：</span><span class="confirm-value">${currentFormData.operator}</span></div>
+        <div class="confirm-item"><span class="confirm-label">🔖 序號：</span><span class="confirm-value">${currentFormData.sn}</span></div>
+        <div class="confirm-item"><span class="confirm-label">📝 備註：</span><span class="confirm-value">${currentFormData.remarks}</span></div>
+      `;
+
+      document.getElementById('confirmList').innerHTML = listHtml;
+      document.getElementById('confirmOverlay').classList.add('show');
+    });
+
+    function hideConfirm() { document.getElementById('confirmOverlay').classList.remove('show'); }
+
+    // ==================== 發送請求到後端 API ====================
+    document.getElementById('finalSubmitBtn').addEventListener('click', function() {
+      hideConfirm();
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('submitBtn').disabled = true;
+
+      const payload = {
+        actionType: 'submit',
+        ...currentFormData
+      };
+
+      fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      })
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById('loading').style.display = 'none';
+        const msg = document.getElementById('message');
+        msg.textContent = data.message;
+        msg.className = 'message ' + (data.success ? 'success' : 'error');
+        msg.style.display = 'block';
+
+        if (data.success) {
+          document.getElementById('inventoryForm').reset();
+          document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
+          selectedAction = '';
+          snList = [];
+          
+          const select = document.getElementById('itemName');
+          const option = select.options[select.selectedIndex];
+          if(option) option.dataset.stock = data.newStock;
+          
+          currentStock = data.newStock;
+          document.getElementById('stockNumber').textContent = currentStock;
+          
+          updateSnDisplay();
+          document.getElementById('qrDisplay').className = 'sn-display empty';
+          document.getElementById('qrDisplay').textContent = '尚未掃描';
+          setTimeout(() => { msg.style.display = 'none'; }, 5000);
+        }
+        document.getElementById('submitBtn').disabled = false;
+      })
+      .catch(err => {
+        document.getElementById('loading').style.display = 'none';
+        const msg = document.getElementById('message');
+        msg.textContent = "系統錯誤：" + err.message;
+        msg.className = 'message error';
+        msg.style.display = 'block';
+        document.getElementById('submitBtn').disabled = false;
+      });
+    });
+
+    // 頁面關閉時清理
+    window.addEventListener('beforeunload', async () => await stopScanner());
+    document.addEventListener('visibilitychange', async () => {
+      if (document.hidden && html5QrCode) {
+        await stopScanner();
+        document.getElementById('cameraContainer').classList.remove('show');
+      }
+    });
+</script>
+</body>
+</html>
